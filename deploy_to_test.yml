@@ -1,0 +1,83 @@
+trigger:
+    - none
+parameters:
+    - name: sandbox
+      type: string
+      default: np2test1
+    - name: repos
+      type: object
+      default:
+          - name: "sfdx-physician-portal"
+            deployType: "sandbox"
+            methodName: "DeployCustomData"
+            customFiles: "force-app/main/default/objects/Test_Request__c,force-app/main/default/objects/Test_Result__c"
+            customTestClasses: "CreateTestRequestTest"
+          - name: "sfdx-omin"
+            deployType: "sandbox"
+            methodName: "DeployAll"
+          - name: "sfdx-aba"
+            methodName: "RunCustomFiles"
+            deployType: "code"
+            customFiles: "scripts/apex/hello.apex"
+resources:
+    repositories:
+        - repository: sfdx-omin
+          type: git
+          name: sfdx-omin
+        - repository: sfdx-physician-portal
+          type: git
+          name: sfdx-physician-portal
+        - repository: sfdx-platform
+          type: git
+          name: sfdx-platform
+        - repository: sfdx-aba
+          type: git
+          name: sfdx-aba
+pool: Build On VM-QA-BREW-01
+jobs:
+    - job: Job1
+      displayName: deploying repos/installing packages into ${{ parameters.sandbox }} sandbox
+      steps:
+          - task: DownloadSecureFile@1
+            name: SalesforceAuthenticationFile
+            displayName: "Fetching Salesforce Authentication File"
+            inputs:
+                secureFile: "appeng_${{ parameters.sandbox }}.json"
+          - task: DownloadSecureFile@1
+            name: SandboxDeploymentFile
+            displayName: "Fetching Sabdbox Deployement File"
+            inputs:
+                secureFile: "deloy_all_or_custom.bat"
+          - task: DownloadSecureFile@1
+            name: PackageRunFile
+            displayName: "Fetching Package Deployement File"
+            inputs:
+                secureFile: "deploy_package.bat"
+          - task: DownloadSecureFile@1
+            name: CustomRunFile
+            displayName: "Fetching Custom Code Run File"
+            inputs:
+                secureFile: "run_custom_code.bat"
+          - ${{ each repo in parameters.repos }}:
+                - checkout: ${{ repo.name }}
+                - ${{ if eq(repo.deployType, 'sandbox') }}:
+                      - task: CmdLine@2
+                        inputs:
+                            script: |
+                                echo Deploying repo.
+                                $(SandboxDeploymentFile.secureFilePath) ${{ repo.methodName }} $(SalesforceAuthenticationFile.secureFilePath) ${{ repo.name }} "${{ repo.customFiles }}" "${{ repo.customTestClasses }}"
+                                echo Repo deployed successfully
+                - ${{ if eq(repo.deployType, 'code') }}:
+                      - task: CmdLine@2
+                        inputs:
+                            script: |
+                                echo Running custom code.
+                                $(CustomRunFile.secureFilePath) ${{ repo.methodName }} $(SalesforceAuthenticationFile.secureFilePath) ${{ repo.name }} "${{ repo.customFiles }}"
+                                echo Code runned successfully.
+                - ${{ if eq(repo.deployType, 'package') }}:
+                      - task: CmdLine@2
+                        inputs:
+                            script: |
+                                echo Installing package
+                                $(PackageRunFile.secureFilePath) ${{ repo.methodName }} $(SalesforceAuthenticationFile.secureFilePath) ${{ repo.name }} ${{ repo.packageName }}  
+                                echo Package installing successfully
